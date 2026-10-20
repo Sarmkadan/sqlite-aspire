@@ -37,7 +37,16 @@ public static class SqliteResourceBuilderExtensions
         this IResourceBuilder<SqliteResource> builder,
         bool enabled = true,
         TimeSpan? busyTimeout = null)
-        => throw new NotImplementedException();
+    {
+        builder.Resource.Options.Pooling = enabled;
+
+        if (busyTimeout.HasValue)
+        {
+            builder.Resource.Options.BusyTimeout = busyTimeout.Value;
+        }
+
+        return builder;
+    }
 
     /// <summary>Schedules periodic online backups via the SQLite backup API.</summary>
     /// <param name="builder">The resource builder.</param>
