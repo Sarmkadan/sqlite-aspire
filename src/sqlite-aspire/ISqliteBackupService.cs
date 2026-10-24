@@ -14,6 +14,8 @@ public interface ISqliteBackupService
     /// <param name="destinationPath">Target file path. Must not exist.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Metadata describing the created backup.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="destinationPath"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="destinationPath"/> is empty, white space, or resolves to the live database path.</exception>
     Task<SqliteBackupInfo> BackupAsync(string destinationPath, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -21,6 +23,8 @@ public interface ISqliteBackupService
     /// </summary>
     /// <param name="sourcePath">Backup file to restore from.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="sourcePath"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="sourcePath"/> is empty, white space, or resolves to the live database path.</exception>
     Task RestoreAsync(string sourcePath, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -46,14 +50,28 @@ public sealed record SqliteBackupInfo(string Path, DateTimeOffset CreatedAtUtc, 
 /// <summary>
 /// Default <see cref="ISqliteBackupService"/> backed by Microsoft.Data.Sqlite.
 /// </summary>
-/// <param name="options">Options of the database to back up.</param>
-public sealed class SqliteBackupService(SqliteOptions options) : ISqliteBackupService
+public sealed class SqliteBackupService : ISqliteBackupService
 {
-    private readonly SqliteOptions _options = options;
+    private readonly SqliteOptions _options;
+
+    /// <summary>
+    /// Creates a backup service for the database described by <paramref name="options"/>.
+    /// </summary>
+    /// <param name="options">Options of the database to back up.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    public SqliteBackupService(SqliteOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options;
+    }
 
     /// <inheritdoc />
     public Task<SqliteBackupInfo> BackupAsync(string destinationPath, CancellationToken cancellationToken = default)
-        => Task.Run(() => CreateBackup(destinationPath, cancellationToken), cancellationToken);
+    {
+        // Validate on the caller's thread so bad arguments throw at call time, not inside the task.
+        var fullPath = ValidatePath(destinationPath, nameof(destinationPath));
+        return Task.Run(() => CreateBackup(fullPath, cancellationToken), cancellationToken);
+    }
 
     private SqliteBackupInfo CreateBackup(string destinationPath, CancellationToken cancellationToken)
     {
@@ -91,7 +109,26 @@ public sealed class SqliteBackupService(SqliteOptions options) : ISqliteBackupSe
 
     /// <inheritdoc />
     public Task RestoreAsync(string sourcePath, CancellationToken cancellationToken = default)
-        => Task.Run(() => RestoreBackup(sourcePath, cancellationToken), cancellationToken);
+    {
+        // Validate on the caller's thread so bad arguments throw at call time, not inside the task.
+        var fullPath = ValidatePath(sourcePath, nameof(sourcePath));
+        return Task.Run(() => RestoreBackup(fullPath, cancellationToken), cancellationToken);
+    }
+
+    private string ValidatePath(string path, string paramName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path, paramName);
+
+        var fullPath = Path.GetFullPath(path);
+        var livePath = Path.GetFullPath(_options.DatabasePath);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (string.Equals(fullPath, livePath, comparison))
+        {
+            throw new ArgumentException("Backup path must differ from the live database path");
+        }
+
+        return fullPath;
+    }
 
     private void RestoreBackup(string sourcePath, CancellationToken cancellationToken)
     {
