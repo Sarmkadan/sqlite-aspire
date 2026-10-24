@@ -5,8 +5,33 @@ namespace SqliteAspire;
 /// <summary>
 /// Configuration for a <see cref="SqliteResource"/>: journal mode, pooling, busy timeout and backup policy.
 /// </summary>
+/// <remarks>
+/// At runtime, <c>AddSqliteClient</c> binds per-connection overrides from <c>Sqlite:{connectionName}</c>.
+/// The appsettings shape is:
+/// <code language="json">
+/// {
+///   "Sqlite": {
+///     "orders": {
+///       "WalMode": true,
+///       "Synchronous": "Normal",
+///       "Pooling": true,
+///       "BusyTimeout": "00:00:05",
+///       "BackupDirectory": "/var/backups/orders",
+///       "BackupInterval": "01:00:00",
+///       "BackupRetentionCount": 24,
+///       "HealthCheck": true
+///     }
+///   }
+/// }
+/// </code>
+/// Keys are optional and match the property names. <c>DatabasePath</c> and <c>Pooling</c> may also be set here, but they
+/// are normally taken from <c>ConnectionStrings:{connectionName}</c>; values in this section override the connection string.
+/// </remarks>
 public sealed class SqliteOptions
 {
+    /// <summary>Configuration section name. Per-connection overrides live under <c>Sqlite:{connectionName}</c>.</summary>
+    public const string SectionName = "Sqlite";
+
     /// <summary>Absolute or app-relative path to the database file. <c>":memory:"</c> for an in-memory database.</summary>
     public string DatabasePath { get; set; } = "app.db";
 
