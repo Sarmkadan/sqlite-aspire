@@ -91,7 +91,42 @@ public sealed class SqliteBackupService(SqliteOptions options) : ISqliteBackupSe
 
     /// <inheritdoc />
     public Task RestoreAsync(string sourcePath, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        => Task.Run(() => RestoreBackup(sourcePath, cancellationToken), cancellationToken);
+
+    private void RestoreBackup(string sourcePath, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var fullPath = Path.GetFullPath(sourcePath);
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException("Backup file to restore from does not exist.", fullPath);
+        }
+
+        // Release pooled handles to the live file before overwriting its pages.
+        SqliteConnection.ClearAllPools();
+
+        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fullPath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString()))
+        using (var destination = new SqliteConnection(_options.ToConnectionString()))
+        {
+            source.Open();
+            destination.Open();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            source.BackupDatabase(destination);
+
+            // The backup copies the source's header, so pragmas must be re-applied to the restored file.
+            SqlitePragmaInitializer.Apply(destination, _options);
+        }
+
+        // Closing the destination returned it to the pool; drop it so no handle to the live file remains.
+        SqliteConnection.ClearAllPools();
+    }
 
     /// <inheritdoc />
     public Task<IReadOnlyList<SqliteBackupInfo>> ListBackupsAsync(CancellationToken cancellationToken = default)
