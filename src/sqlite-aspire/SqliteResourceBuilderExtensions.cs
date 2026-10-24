@@ -16,6 +16,8 @@ public static class SqliteResourceBuilderExtensions
     /// <param name="name">Resource name; also the connection string key for dependents.</param>
     /// <param name="databasePath">Path to the database file. Defaults to <c>{name}.db</c> in the app host directory.</param>
     /// <returns>A resource builder for further configuration.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is <see langword="null"/>, empty, or white space.</exception>
     public static IResourceBuilder<SqliteResource> AddSqlite(
         this IDistributedApplicationBuilder builder,
         string name,
@@ -53,10 +55,13 @@ public static class SqliteResourceBuilderExtensions
     /// <param name="builder">The resource builder.</param>
     /// <param name="enabled">Whether WAL is enabled. Default: <see langword="true"/>.</param>
     /// <returns>The same resource builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
     public static IResourceBuilder<SqliteResource> WithWalMode(
         this IResourceBuilder<SqliteResource> builder,
         bool enabled = true)
     {
+        ArgumentNullException.ThrowIfNull(builder);
+
         builder.Resource.Options.WalMode = enabled;
 
         return builder;
@@ -66,11 +71,21 @@ public static class SqliteResourceBuilderExtensions
     /// <param name="builder">The resource builder.</param>
     /// <param name="enabled">Whether pooling is enabled.</param>
     /// <param name="busyTimeout">Writer wait time on a locked database. <see langword="null"/> keeps the default.</param>
+    /// <returns>The same resource builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="busyTimeout"/> is less than or equal to <see cref="TimeSpan.Zero"/>.</exception>
     public static IResourceBuilder<SqliteResource> WithConnectionPooling(
         this IResourceBuilder<SqliteResource> builder,
         bool enabled = true,
         TimeSpan? busyTimeout = null)
     {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        if (busyTimeout.HasValue)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(busyTimeout.Value, TimeSpan.Zero, nameof(busyTimeout));
+        }
+
         builder.Resource.Options.Pooling = enabled;
 
         if (busyTimeout.HasValue)
@@ -86,6 +101,13 @@ public static class SqliteResourceBuilderExtensions
     /// <param name="backupDirectory">Directory to write backup files to.</param>
     /// <param name="interval">Interval between backups. Default: 1 hour.</param>
     /// <param name="retentionCount">Number of most recent backups to keep. Default: 24.</param>
+    /// <returns>The same resource builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="backupDirectory"/> is <see langword="null"/>, empty, or white space.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="interval"/> is less than or equal to <see cref="TimeSpan.Zero"/>, or
+    /// <paramref name="retentionCount"/> is less than or equal to zero.
+    /// </exception>
     public static IResourceBuilder<SqliteResource> WithBackup(
         this IResourceBuilder<SqliteResource> builder,
         string backupDirectory,
@@ -94,6 +116,12 @@ public static class SqliteResourceBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(backupDirectory);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(retentionCount);
+
+        if (interval.HasValue)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval.Value, TimeSpan.Zero, nameof(interval));
+        }
 
         var options = builder.Resource.Options;
         options.BackupDirectory = Path.GetFullPath(backupDirectory, builder.ApplicationBuilder.AppHostDirectory);
@@ -106,6 +134,8 @@ public static class SqliteResourceBuilderExtensions
     /// <summary>Registers a health check that opens a connection and runs <c>PRAGMA quick_check</c>.</summary>
     /// <param name="builder">The resource builder.</param>
     /// <param name="enabled">Whether the health check is registered. Default: <see langword="true"/>.</param>
+    /// <returns>The same resource builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
     public static IResourceBuilder<SqliteResource> WithHealthCheck(
         this IResourceBuilder<SqliteResource> builder,
         bool enabled = true)
