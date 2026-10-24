@@ -49,8 +49,10 @@ public static class SqliteClientExtensions
         var options = new SqliteOptions();
         Populate(options, connectionStringBuilder, section, configure);
 
+        builder.Services.AddSingleton<IValidateOptions<SqliteOptions>, SqliteOptionsValidator>();
         builder.Services.AddOptions<SqliteOptions>(connectionName)
-            .Configure(target => Populate(target, connectionStringBuilder, section, configure));
+            .Configure(target => Populate(target, connectionStringBuilder, section, configure))
+            .ValidateOnStart();
 
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<ISqliteBackupService, SqliteBackupService>();
