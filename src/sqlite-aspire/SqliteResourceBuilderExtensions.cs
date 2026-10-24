@@ -1,5 +1,6 @@
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SqliteAspire;
 
@@ -108,5 +109,22 @@ public static class SqliteResourceBuilderExtensions
     public static IResourceBuilder<SqliteResource> WithHealthCheck(
         this IResourceBuilder<SqliteResource> builder,
         bool enabled = true)
-        => throw new NotImplementedException();
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Resource.Options.HealthCheck = enabled;
+
+        if (enabled)
+        {
+            var checkName = $"sqlite-{builder.Resource.Name}";
+
+            builder.ApplicationBuilder.Services
+                .AddHealthChecks()
+                .AddCheck(checkName, new SqliteHealthCheck(builder.Resource.Options));
+
+            builder.WithHealthCheck(checkName);
+        }
+
+        return builder;
+    }
 }
