@@ -35,11 +35,41 @@ public sealed class SqliteOptions
     public bool HealthCheck { get; set; } = true;
 
     /// <summary>
+    /// Checks that the options describe a usable configuration. Backup settings are only checked when
+    /// <see cref="BackupDirectory"/> is set.
+    /// </summary>
+    /// <exception cref="ArgumentException"><see cref="DatabasePath"/> is <see langword="null"/>, empty or white space.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="BusyTimeout"/> is negative; or <see cref="BackupDirectory"/> is set and <see cref="BackupInterval"/> is
+    /// zero or negative, or <see cref="BackupRetentionCount"/> is less than 1; or <see cref="Synchronous"/> is not a defined value.
+    /// </exception>
+    public void Validate()
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(DatabasePath, nameof(DatabasePath));
+        ArgumentOutOfRangeException.ThrowIfLessThan(BusyTimeout, TimeSpan.Zero, nameof(BusyTimeout));
+
+        if (BackupDirectory is not null)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(BackupInterval, TimeSpan.Zero, nameof(BackupInterval));
+            ArgumentOutOfRangeException.ThrowIfLessThan(BackupRetentionCount, 1, nameof(BackupRetentionCount));
+        }
+
+        if (!Enum.IsDefined(Synchronous))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Synchronous), Synchronous, "Value is not a defined SqliteSynchronous member.");
+        }
+    }
+
+    /// <summary>
     /// Builds a Microsoft.Data.Sqlite connection string from the current options.
     /// </summary>
     /// <returns>A connection string suitable for <c>SqliteConnection</c>.</returns>
+    /// <exception cref="ArgumentException">The options are invalid. See <see cref="Validate"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The options are invalid. See <see cref="Validate"/>.</exception>
     public string ToConnectionString()
     {
+        Validate();
+
         var builder = new SqliteConnectionStringBuilder
         {
             DataSource = DatabasePath,

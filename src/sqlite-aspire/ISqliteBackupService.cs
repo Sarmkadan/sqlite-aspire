@@ -59,9 +59,12 @@ public sealed class SqliteBackupService : ISqliteBackupService
     /// </summary>
     /// <param name="options">Options of the database to back up.</param>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> has an invalid database path. See <see cref="SqliteOptions.Validate"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has an out-of-range value. See <see cref="SqliteOptions.Validate"/>.</exception>
     public SqliteBackupService(SqliteOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
         _options = options;
     }
 

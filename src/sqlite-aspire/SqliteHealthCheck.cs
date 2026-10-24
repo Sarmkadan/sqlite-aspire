@@ -8,10 +8,23 @@ namespace SqliteAspire;
 /// and runs <c>PRAGMA quick_check</c>. Reports <see cref="HealthStatus.Degraded"/> when the file is readable
 /// but the integrity check reports problems.
 /// </summary>
-/// <param name="options">Options of the database to check.</param>
-public sealed class SqliteHealthCheck(SqliteOptions options) : IHealthCheck
+public sealed class SqliteHealthCheck : IHealthCheck
 {
-    private readonly SqliteOptions _options = options;
+    private readonly SqliteOptions _options;
+
+    /// <summary>
+    /// Creates a health check for the database described by <paramref name="options"/>.
+    /// </summary>
+    /// <param name="options">Options of the database to check.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> has an invalid database path. See <see cref="SqliteOptions.Validate"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has an out-of-range value. See <see cref="SqliteOptions.Validate"/>.</exception>
+    public SqliteHealthCheck(SqliteOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        _options = options;
+    }
 
     /// <inheritdoc />
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
