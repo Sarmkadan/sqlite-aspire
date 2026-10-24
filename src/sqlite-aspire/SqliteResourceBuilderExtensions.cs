@@ -42,13 +42,24 @@ public static class SqliteResourceBuilderExtensions
         return builder.AddResource(resource);
     }
 
-    /// <summary>Enables or disables WAL journal mode.</summary>
+    /// <summary>
+    /// Enables or disables WAL journal mode.
+    /// <para>
+    /// WAL with <c>synchronous=NORMAL</c> is the recommended pairing, but it is not enforced:
+    /// the <see cref="SqliteOptions.Synchronous"/> setting is left as configured.
+    /// </para>
+    /// </summary>
     /// <param name="builder">The resource builder.</param>
     /// <param name="enabled">Whether WAL is enabled. Default: <see langword="true"/>.</param>
+    /// <returns>The same resource builder, for chaining.</returns>
     public static IResourceBuilder<SqliteResource> WithWalMode(
         this IResourceBuilder<SqliteResource> builder,
         bool enabled = true)
-        => throw new NotImplementedException();
+    {
+        builder.Resource.Options.WalMode = enabled;
+
+        return builder;
+    }
 
     /// <summary>Configures ADO.NET connection pooling and busy timeout.</summary>
     /// <param name="builder">The resource builder.</param>
