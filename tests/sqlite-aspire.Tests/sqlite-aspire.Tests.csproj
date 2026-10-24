@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- Allow the test host to run on a newer installed runtime when the exact 9.0 runtime is absent. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
