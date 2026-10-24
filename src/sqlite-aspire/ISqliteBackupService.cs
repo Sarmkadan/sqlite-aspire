@@ -130,7 +130,35 @@ public sealed class SqliteBackupService(SqliteOptions options) : ISqliteBackupSe
 
     /// <inheritdoc />
     public Task<IReadOnlyList<SqliteBackupInfo>> ListBackupsAsync(CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        => Task.Run<IReadOnlyList<SqliteBackupInfo>>(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var directory = _options.BackupDirectory;
+            if (directory is null || !Directory.Exists(directory))
+            {
+                return [];
+            }
+
+            var backups = new List<SqliteBackupInfo>();
+            foreach (var file in Directory.EnumerateFiles(directory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var extension = Path.GetExtension(file);
+                if (!extension.Equals(".db", StringComparison.OrdinalIgnoreCase)
+                    && !extension.Equals(".bak", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var fullPath = Path.GetFullPath(file);
+                backups.Add(new SqliteBackupInfo(fullPath, File.GetCreationTimeUtc(fullPath), new FileInfo(fullPath).Length));
+            }
+
+            backups.Sort((left, right) => right.CreatedAtUtc.CompareTo(left.CreatedAtUtc));
+            return backups;
+        }, cancellationToken);
 
     /// <inheritdoc />
     public Task<int> PruneAsync(CancellationToken cancellationToken = default)
