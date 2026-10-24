@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+
 namespace SqliteAspire;
 
 /// <summary>
@@ -36,7 +38,19 @@ public sealed class SqliteOptions
     /// Builds a Microsoft.Data.Sqlite connection string from the current options.
     /// </summary>
     /// <returns>A connection string suitable for <c>SqliteConnection</c>.</returns>
-    public string ToConnectionString() => throw new NotImplementedException();
+    public string ToConnectionString()
+    {
+        var builder = new SqliteConnectionStringBuilder
+        {
+            DataSource = DatabasePath,
+            Pooling = Pooling,
+            DefaultTimeout = (int)BusyTimeout.TotalSeconds,
+            Mode = DatabasePath == ":memory:" ? SqliteOpenMode.Memory : SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Default,
+        };
+
+        return builder.ToString();
+    }
 }
 
 /// <summary>Values for <c>PRAGMA synchronous</c>.</summary>
