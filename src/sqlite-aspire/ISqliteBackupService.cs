@@ -161,6 +161,30 @@ public sealed class SqliteBackupService(SqliteOptions options) : ISqliteBackupSe
         }, cancellationToken);
 
     /// <inheritdoc />
-    public Task<int> PruneAsync(CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+    public async Task<int> PruneAsync(CancellationToken cancellationToken = default)
+    {
+        if (_options.BackupRetentionCount <= 0)
+        {
+            return 0;
+        }
+
+        var backups = await ListBackupsAsync(cancellationToken);
+        var deleted = 0;
+        foreach (var backup in backups.Skip(_options.BackupRetentionCount))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                File.Delete(backup.Path);
+                deleted++;
+            }
+            catch (FileNotFoundException)
+            {
+                // Removed by someone else between listing and deletion.
+            }
+        }
+
+        return deleted;
+    }
 }
