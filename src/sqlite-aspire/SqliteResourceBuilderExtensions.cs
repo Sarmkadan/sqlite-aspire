@@ -90,7 +90,17 @@ public static class SqliteResourceBuilderExtensions
         string backupDirectory,
         TimeSpan? interval = null,
         int retentionCount = 24)
-        => throw new NotImplementedException();
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrWhiteSpace(backupDirectory);
+
+        var options = builder.Resource.Options;
+        options.BackupDirectory = Path.GetFullPath(backupDirectory, builder.ApplicationBuilder.AppHostDirectory);
+        options.BackupInterval = interval ?? TimeSpan.FromHours(1);
+        options.BackupRetentionCount = retentionCount;
+
+        return builder;
+    }
 
     /// <summary>Registers a health check that opens a connection and runs <c>PRAGMA quick_check</c>.</summary>
     /// <param name="builder">The resource builder.</param>
