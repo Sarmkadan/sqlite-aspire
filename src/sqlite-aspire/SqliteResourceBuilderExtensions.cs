@@ -19,7 +19,28 @@ public static class SqliteResourceBuilderExtensions
         this IDistributedApplicationBuilder builder,
         string name,
         string? databasePath = null)
-        => throw new NotImplementedException();
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        var path = databasePath ?? Path.Combine(builder.AppHostDirectory, $"{name}.db");
+
+        if (path != ":memory:")
+        {
+            path = Path.GetFullPath(path, builder.AppHostDirectory);
+
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+        }
+
+        var options = new SqliteOptions { DatabasePath = path };
+        var resource = new SqliteResource(name, options);
+
+        return builder.AddResource(resource);
+    }
 
     /// <summary>Enables or disables WAL journal mode.</summary>
     /// <param name="builder">The resource builder.</param>
