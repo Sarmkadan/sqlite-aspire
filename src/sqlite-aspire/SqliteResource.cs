@@ -13,8 +13,11 @@ public sealed class SqliteResource(string name, SqliteOptions options) : Resourc
     /// <summary>Effective options. Mutated by <c>With*</c> extensions before the app model is frozen.</summary>
     public SqliteOptions Options { get; } = options;
 
+    /// <summary>Path to the SQLite database file, taken from <see cref="SqliteOptions.DatabasePath"/>.</summary>
+    public string DatabasePath => Options.DatabasePath;
+
     /// <summary>
     /// Connection string expression injected into dependent projects as <c>ConnectionStrings:{Name}</c>.
     /// </summary>
-    public ReferenceExpression ConnectionStringExpression => throw new NotImplementedException();
+    public ReferenceExpression ConnectionStringExpression => ReferenceExpression.Create($"{Options.ToConnectionString()}");
 }
