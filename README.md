@@ -110,6 +110,96 @@ All keys are optional. Defaults, from `SqliteOptions`:
 
 `DatabasePath` is not a configuration key here. It is read from `ConnectionStrings:{name}`.
 
+## WAL and synchronous
+
+`WalMode` switches the file to `PRAGMA journal_mode=WAL`. The mode is stored in the database file, so it stays set across restarts. WAL keeps recent commits in a `-wal` sidecar file and an index in `-shm` until a checkpoint merges them back. Readers do not block the writer, which is why WAL suits a service with concurrent requests. The sidecar files belong to the database: copying only `orders.db` while the database is in use can miss committed data. Use the backup API instead (see [Backups](#backups)). WAL is not available for `:memory:`; the options validator rejects that combination.
+
+`Synchronous` sets `PRAGMA synchronous`, which controls how often SQLite calls `fsync`. It is per connection, not per file.
+
+| Value | Behaviour in WAL mode | Trade-off | Use when |
+|-------|-----------------------|-----------|----------|
+| `Off` | No `fsync`. | Fastest. A power loss or OS crash can corrupt the database. | Throwaway data, tests, CI. |
+| `Normal` | `fsync` only at WAL checkpoints. | Committed transactions survive an application crash. A power loss can roll back the most recent commits, but the file stays consistent. | Default. Recommended pairing with WAL. |
+| `Full` | `fsync` on every commit. | Every committed transaction is durable. Slowest of the three. | Data that must not be lost, or `WalMode` set to `false`. |
+
+`Normal` is only safe from corruption on power loss when WAL is on. With `WalMode` set to `false` (rollback journal), use `Full`.
+
+Current limitation: `SqlitePragmaInitializer` is applied by `RestoreAsync` only (see [Status](#status)). Connections your code opens do not get the journal mode or synchronous level from this package yet. To apply them yourself, call the public `SqlitePragmaInitializer.Apply(connection, options)` after opening a connection.
+
+## Backups
+
+`ISqliteBackupService` is registered by `AddSqliteClient`. It has four operations:
+
+| Method | Behaviour |
+|--------|-----------|
+| `Task<SqliteBackupInfo> BackupAsync(string destinationPath, CancellationToken ct = default)` | Writes a consistent snapshot to `destinationPath`. Creates missing directories. Throws `IOException` if the file already exists and `ArgumentException` if the path is the live database. |
+| `Task RestoreAsync(string sourcePath, CancellationToken ct = default)` | Replaces the live database with the backup contents and re-applies the pragmas. Throws `FileNotFoundException` if the source is missing. Requires exclusive access, so stop or quiesce the writers first. |
+| `Task<IReadOnlyList<SqliteBackupInfo>> ListBackupsAsync(CancellationToken ct = default)` | Lists `.db` and `.bak` files in `BackupDirectory`, newest first. Returns an empty list when the directory is not set or does not exist. |
+| `Task<int> PruneAsync(CancellationToken ct = default)` | Deletes everything beyond the newest `BackupRetentionCount` files and returns how many it deleted. |
+
+`SqliteBackupInfo` is a record with `Path` (absolute path), `CreatedAtUtc` (`DateTimeOffset`) and `SizeBytes` (`long`).
+
+Manual backup from a minimal API endpoint:
+
+```csharp
+using SqliteAspire;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.AddSqliteClient("orders");
+
+var app = builder.Build();
+
+app.MapPost("/admin/backups", async (ISqliteBackupService backups, SqliteOptions options, CancellationToken ct) =>
+{
+    // Writes files to disk: put an authorization policy on this route.
+    var fileName = $"{Path.GetFileNameWithoutExtension(options.DatabasePath)}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db";
+    var destination = Path.Combine(options.BackupDirectory ?? "backups", fileName);
+
+    // Two calls within the same second produce the same name, and the second one throws IOException.
+    SqliteBackupInfo info = await backups.BackupAsync(destination, ct);
+
+    return Results.Ok(info);
+});
+
+app.Run();
+```
+
+The response is the serialized `SqliteBackupInfo`, for example `{ "path": "/var/backups/orders/orders-20261024-093000.db", "createdAtUtc": "2026-10-24T09:30:00.1234567+00:00", "sizeBytes": 40960 }`.
+
+### Scheduled backups
+
+`SqliteBackupScheduler` runs as a hosted service only when `BackupDirectory` is set. Every `BackupInterval` it creates a backup, then calls `PruneAsync`. A failed backup is logged as an error and the next tick retries.
+
+File names follow `{db}-{yyyyMMdd-HHmmss}.db`, where `{db}` is the file name of `DatabasePath` without its extension and the timestamp is UTC. For `data/orders.db` the file is `orders-20261024-093000.db`.
+
+Retention is count-based. `BackupRetentionCount` (default `24`) keeps the newest files by creation time, which is one day at the default hourly interval. Manual backups in the same directory count toward the limit. Pruning considers every `.db` and `.bak` file in `BackupDirectory`, whatever its name, so give each database its own backup directory. Otherwise one database's pruning can delete another database's backups.
+
+### Why the backup API and not `File.Copy`
+
+In WAL mode a committed transaction may exist only in `orders.db-wal`. A plain copy of `orders.db` can therefore be stale. Copying `orders.db` and `orders.db-wal` one after the other is not atomic either: a checkpoint can run between the two copies, so the pair does not describe one point in time. `BackupDatabase` (`sqlite3_backup`) reads the source inside one consistent snapshot and writes a single complete database file, without a sidecar. Writers can keep running during the backup.
+
+## Health checks
+
+When `HealthCheck` is `true` (the default), `AddSqliteClient` registers `SqliteHealthCheck` as `sqlite-{name}`. Expose it with `MapHealthChecks` as usual. Each run opens a new connection and does three things: reads `PRAGMA journal_mode`, reads `PRAGMA page_count`, and runs `PRAGMA quick_check`.
+
+| Status | When |
+|--------|------|
+| `Healthy` | The database opens, the journal mode matches `WalMode` (`wal` when true, `delete` when false), and `quick_check` returns exactly one row, `ok`. Description: `Database is open and passed quick_check`. |
+| `Degraded` | The database opens, but the journal mode differs from the expected one, or `quick_check` returns anything other than `ok` (including no rows). The description lists every issue, separated by `; `. A failed integrity check is reported as `Degraded`, not `Unhealthy`. The journal mode is not checked for `:memory:`. |
+| `Unhealthy` | `SqliteException` or `IOException` is thrown while opening the file or running the checks. Description: `Cannot open database`, with the exception attached. |
+
+Until WAL is applied to a new file (see [Status](#status)), a fresh database reports `Degraded` because its journal mode is not `wal`.
+
+Data returned with every result:
+
+| Key | Type | Present when |
+|-----|------|--------------|
+| `path` | `string` | Always. The value of `DatabasePath`. |
+| `journal_mode` | `string` | The connection opened and `PRAGMA journal_mode` ran. Lowercase, for example `wal` or `delete`. |
+| `page_count` | `long` | The connection opened and `PRAGMA page_count` ran. |
+
+On `Unhealthy` after a failed open, only `path` is present.
+
 ## API overview
 
 | Type | Purpose |
