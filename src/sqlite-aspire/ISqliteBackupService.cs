@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+
 namespace SqliteAspire;
 
 /// <summary>
@@ -51,7 +53,41 @@ public sealed class SqliteBackupService(SqliteOptions options) : ISqliteBackupSe
 
     /// <inheritdoc />
     public Task<SqliteBackupInfo> BackupAsync(string destinationPath, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        => Task.Run(() => CreateBackup(destinationPath, cancellationToken), cancellationToken);
+
+    private SqliteBackupInfo CreateBackup(string destinationPath, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var fullPath = Path.GetFullPath(destinationPath);
+        if (File.Exists(fullPath))
+        {
+            throw new IOException($"Backup destination already exists: '{fullPath}'.");
+        }
+
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        using (var source = new SqliteConnection(_options.ToConnectionString()))
+        using (var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fullPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false,
+        }.ToString()))
+        {
+            source.Open();
+            destination.Open();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            source.BackupDatabase(destination);
+        }
+
+        return new SqliteBackupInfo(fullPath, DateTimeOffset.UtcNow, new FileInfo(fullPath).Length);
+    }
 
     /// <inheritdoc />
     public Task RestoreAsync(string sourcePath, CancellationToken cancellationToken = default)
